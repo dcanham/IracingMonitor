@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+reports/out/
+
+# Personal telemetry (database, PresentMon/xperf captures) - local only
+data/
+
+# Runtime logs
+vrmon_stdout.log
+vrmon_stderr.log
+
+# Downloaded helper tools (PresentMon) - fetched by setup, not committed
+tools/

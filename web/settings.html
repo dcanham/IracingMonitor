@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iRacing Monitor - Current Settings</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.settings-panel { margin-bottom: 14px; }
+.settings-panel h2 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
+.kv-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.kv-table tr { border-bottom: 1px solid var(--border); }
+.kv-table td { padding: 4px 8px; }
+.kv-table td.k { color: var(--muted); white-space: nowrap; }
+.kv-table td.v { font-variant-numeric: tabular-nums; text-align: right; }
+#filter { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; width: 100%; margin-bottom: 14px; font-size: 0.9rem; }
+a.back { color: var(--accent); text-decoration: none; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<p><a class="back" href="/">&larr; back to live dashboard</a></p>
+<h1>Current graphics / streaming settings</h1>
+<p class="muted" id="source-note">reading live from disk...</p>
+
+<input id="filter" type="text" placeholder="filter settings by key...">
+
+<div id="content"></div>
+
+<script>
+function renderTable(obj) {
+    const rows = Object.entries(obj).map(([k, v]) =>
+        `<tr data-key="${k.toLowerCase()}"><td class="k">${k}</td><td class="v">${JSON.stringify(v)}</td></tr>`
+    ).join("");
+    return `<table class="kv-table">${rows}</table>`;
+}
+
+function groupBySection(flat) {
+    const groups = {};
+    for (const [k, v] of Object.entries(flat)) {
+        const [section, ...rest] = k.split(".");
+        const key = rest.join(".") || section;
+        const sectionName = rest.length ? section : "General";
+        (groups[sectionName] ??= {})[key] = v;
+    }
+    return groups;
+}
+
+async function load() {
+    const res = await fetch("/api/settings/current");
+    const data = await res.json();
+    const content = document.getElementById("content");
+    document.getElementById("source-note").textContent =
+        "read from rendererDX11Monitor.ini just now";
+
+    let html = "";
+
+    const sections = groupBySection(data.iracing_renderer);
+    html += `<div class="settings-panel"><h2>iRacing renderer (rendererDX11Monitor.ini)</h2>`;
+    if (Object.keys(sections).length) {
+        for (const [name, kv] of Object.entries(sections)) {
+            html += `<h3 style="font-size:0.8rem;margin:10px 0 4px;">[${name}]</h3>${renderTable(kv)}`;
+        }
+    } else {
+        html += `<p class="muted">rendererDX11Monitor.ini not found - has the iRacing sim been run on this PC yet?</p>`;
+    }
+    html += `</div>`;
+
+    content.innerHTML = html;
+
+    document.getElementById("filter").addEventListener("input", (e) => {
+        const term = e.target.value.toLowerCase();
+        document.querySelectorAll(".kv-table tr").forEach(tr => {
+            tr.hidden = term !== "" && !tr.dataset.key.includes(term);
+        });
+    });
+}
+
+load();
+</script>
+</body>
+</html>

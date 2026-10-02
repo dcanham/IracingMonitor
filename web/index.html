@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iRacing Monitor</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<h1>iRacing Performance Monitor<a href="/settings" style="font-size:0.7rem;color:var(--accent);text-decoration:none;">current settings &rarr;</a></h1>
+<div id="status-bar">
+    <span><span id="conn-dot" class="dot pulse"></span><span id="conn-text">connecting...</span></span>
+    <span id="recording-badge" class="badge">-</span>
+    <span id="session-text">no session</span>
+    <span id="clock"></span>
+</div>
+
+<div id="source-strip" class="grid sources"></div>
+
+<div class="grid">
+    <div class="panel">
+        <h2><span class="dot" id="dot-cpu"></span>CPU</h2>
+        <div class="stat-row"><span class="label">Total</span><span class="value" id="cpu-total">-</span></div>
+        <div class="stat-row"><span class="label">Busiest core</span><span class="value" id="cpu-max">-</span></div>
+        <div class="stat-row" id="row-cpu-p"><span class="label">P-core group</span><span class="value" id="cpu-p">-</span></div>
+        <div class="stat-row" id="row-cpu-e"><span class="label">E-core group</span><span class="value" id="cpu-e">-</span></div>
+        <canvas id="chart-cpu"></canvas>
+    </div>
+
+    <div class="panel">
+        <h2><span class="dot" id="dot-gpu"></span>GPU <span id="gpu-name" class="muted-inline"></span></h2>
+        <div class="stat-row"><span class="label">Util (total)</span><span class="value" id="gpu-util">-</span></div>
+        <div class="stat-row"><span class="label">Util (iRacing's share)</span><span class="value" id="gpu-iracing-util">-</span></div>
+        <div class="stat-row"><span class="label">Encoder</span><span class="value" id="gpu-enc">-</span></div>
+        <div class="stat-row"><span class="label">Decoder</span><span class="value" id="gpu-dec">-</span></div>
+        <div class="stat-row"><span class="label">VRAM</span><span class="value" id="gpu-vram">-</span></div>
+        <div class="stat-row"><span class="label">VRAM (iRacing)</span><span class="value" id="gpu-iracing-vram">-</span></div>
+        <div class="stat-row" id="row-gpu-temp"><span class="label">Temp</span><span class="value" id="gpu-temp">-</span></div>
+        <div class="stat-row" id="row-gpu-power"><span class="label">Power</span><span class="value" id="gpu-power">-</span></div>
+        <div class="stat-row" id="row-gpu-throttle"><span class="label">Power/thermal limit</span><span class="value" id="gpu-throttle">-</span></div>
+        <canvas id="chart-gpu"></canvas>
+    </div>
+
+    <div class="panel">
+        <h2>RAM</h2>
+        <div class="stat-row"><span class="label">Used</span><span class="value" id="ram-used">-</span></div>
+        <canvas id="chart-ram"></canvas>
+    </div>
+
+    <div class="panel">
+        <h2>Disk I/O</h2>
+        <div class="stat-row"><span class="label">Read</span><span class="value" id="disk-read">-</span></div>
+        <div class="stat-row"><span class="label">Write</span><span class="value" id="disk-write">-</span></div>
+        <canvas id="chart-disk"></canvas>
+    </div>
+
+    <div class="panel">
+        <h2>Network</h2>
+        <div class="stat-row"><span class="label">Sent</span><span class="value" id="net-sent">-</span></div>
+        <div class="stat-row"><span class="label">Received</span><span class="value" id="net-recv">-</span></div>
+        <canvas id="chart-net"></canvas>
+    </div>
+
+    <div class="panel">
+        <h2><span class="dot" id="dot-iracing"></span>iRacing</h2>
+        <div class="stat-row"><span class="label">Track / Car</span><span class="value" id="ir-track">-</span></div>
+        <div class="stat-row"><span class="label">Sim process</span><span class="value" id="ir-process">-</span></div>
+        <div class="stat-row"><span class="label">Telemetry</span><span class="value" id="ir-connected">-</span></div>
+        <div class="stat-row"><span class="label">Frame rate</span><span class="value" id="ir-fps">-</span></div>
+        <div class="stat-row"><span class="label">On track</span><span class="value" id="ir-ontrack">-</span></div>
+        <div class="stat-row"><span class="label">Lap</span><span class="value" id="ir-lap">-</span></div>
+        <div class="stat-row"><span class="label">iRacing CPU use</span><span class="value" id="proc-cpu">-</span></div>
+        <canvas id="chart-fps"></canvas>
+    </div>
+
+    <div class="panel" style="grid-column: 1 / -1;">
+        <h2>Reports <span class="muted-inline">newest session first - click to open in a new tab</span></h2>
+        <div id="report-list"><div class="empty">loading...</div></div>
+    </div>
+
+    <div class="panel" style="grid-column: 1 / -1;">
+        <h2>Recent events
+            <select id="event-range" class="range-select">
+                <option value="48">last 48 hours</option>
+                <option value="168">last 7 days</option>
+                <option value="720">last 30 days</option>
+            </select>
+            <span class="muted-inline">Windows crashes/driver resets, iRacing and anti-cheat log errors, sessions - click an entry for details</span>
+        </h2>
+        <div id="event-feed"><div class="empty">loading...</div></div>
+    </div>
+</div>
+
+<div id="event-modal" class="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-head">
+            <h3 id="modal-title"></h3>
+            <button id="modal-close" class="modal-close" title="Close (Esc)">&times;</button>
+        </div>
+        <div id="modal-meta" class="modal-meta"></div>
+        <pre id="modal-body" class="modal-body"></pre>
+        <div class="modal-actions">
+            <button id="modal-open" class="modal-button"></button>
+            <span id="modal-note" class="modal-meta"></span>
+        </div>
+    </div>
+</div>
+
+<script src="/static/chart.umd.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

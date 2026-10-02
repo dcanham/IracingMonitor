@@ -1,0 +1,2 @@
+# cmd mis-parses labels/goto in .bat files with LF-only line endings
+*.bat text eol=crlf
