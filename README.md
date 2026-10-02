@@ -36,8 +36,12 @@ Everything stays on your PC. Nothing is uploaded anywhere.
 
 | Graphics card | What's recorded |
 |---|---|
-| NVIDIA | Everything: load, iRacing's share, video encoder, VRAM, temperature, power draw, clock throttling |
-| AMD / Intel | Load, iRacing's share, video encoder, VRAM (no temperature/power yet) |
+| NVIDIA | Everything: load, iRacing's share, video encoder, VRAM, temperature, power draw, core clock, clock throttling |
+| AMD / Intel | Load, iRacing's share, video encoder, VRAM, temperature, power draw, core clock - everything except throttle reasons |
+
+AMD and Intel sensors come from
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+(MPL-2.0), which setup downloads for you.
 
 ## Install
 
@@ -49,7 +53,9 @@ Everything stays on your PC. Nothing is uploaded anywhere.
    - find (or offer to install) a suitable Python and install the
      packages this app needs into its own private folder (`.venv`),
    - download [PresentMon](https://github.com/GameTechDev/PresentMon)
-     (Intel's open-source frame-timing tool) and check its signature,
+     (Intel's open-source frame-timing tool) and check its signature, and
+     LibreHardwareMonitor's sensor library (GPU temperature/power on AMD
+     and Intel cards),
    - offer to install xperf (Microsoft's Windows Performance Toolkit) -
      optional; it shows which CPU core is busy handling driver interrupts
      from devices like your wheelbase,
@@ -103,7 +109,7 @@ app runs. You rarely need to touch it.
 |---|---|---|
 | `network_adapter` | `"auto"` | `"auto"` adds up every connected network adapter. Or put one adapter's name (as shown in Settings > Network) to watch only that one. |
 | `watch_processes` | `[]` | Program names to record every few seconds even when they aren't among the busiest - e.g. `["discord", "obs"]` if you suspect one. |
-| `gpu_stats` | `"auto"` | `"auto"` uses Windows' own GPU counters plus NVIDIA's on NVIDIA cards. `"windows"` or `"nvml"` forces one source. |
+| `gpu_stats` | `"auto"` | `"auto"` uses Windows' own GPU counters, plus NVIDIA's own stats on NVIDIA cards or LibreHardwareMonitor on AMD/Intel. `"windows"`, `"nvml"` or `"lhm"` forces a source. |
 | `presentmon_exe`, `xperf_exe` | `""` | Leave blank to find them automatically. |
 
 ## Check setup
@@ -181,5 +187,5 @@ vrmon/             the recorder and live dashboard
 reports/           session analysis, HTML/PDF reports, PresentMon/xperf import
 web/               dashboard (Chart.js vendored, no internet needed)
 data/              your recordings and settings (not in git)
-tools/             PresentMon, downloaded by setup (not in git)
+tools/             PresentMon + LibreHardwareMonitor, downloaded by setup (not in git)
 ```

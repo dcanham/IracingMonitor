@@ -9,6 +9,18 @@ echo  iRacing Monitor setup
 echo ============================================================
 echo.
 
+rem Windows' default 260-character path limit: some packages contain deeply
+rem nested files, so pip fails if this folder's own path is already long.
+set "SETUP_DIR=%~dp0"
+powershell -NoProfile -Command "exit [int]($env:SETUP_DIR.Length -gt 110)" >nul 2>&1
+if errorlevel 1 (
+    echo This folder's path is too long for Windows to install the app's packages:
+    echo   %~dp0
+    echo Move the iRacingMonitor folder somewhere shorter - e.g. C:\iRacingMonitor
+    echo or Documents\iRacingMonitor - and run setup.bat from there.
+    goto fail
+)
+
 rem Supported Python versions: 3.10 - 3.13. The newest Python is often
 rem ahead of the packages this app needs (e.g. no prebuilt matplotlib yet),
 rem and pip then tries - and fails - to compile them from source.
@@ -58,7 +70,10 @@ echo Installing/updating Python packages...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip --quiet --disable-pip-version-check
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt --quiet --disable-pip-version-check --only-binary=:all:
 if errorlevel 1 (
-    echo Package install failed - check your internet connection and run setup.bat again.
+    echo Package install failed. Usually either:
+    echo   - no internet connection, or
+    echo   - "filename too long" above: move this folder somewhere with a shorter path,
+    echo     e.g. C:\iRacingMonitor, delete its .venv folder, and run setup.bat again.
     goto fail
 )
 echo.

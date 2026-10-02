@@ -37,9 +37,10 @@ _SETTINGS_DEFAULTS = {
     # Process-name substrings to record every tick even when they aren't
     # among the heaviest processes - e.g. a known troublemaker.
     "watch_processes": [],
-    # "auto": Windows' own GPU counters (any vendor) plus NVIDIA's NVML on
-    # NVIDIA cards for temperature/clocks/power/throttling. "nvml" or
-    # "windows" forces one source only.
+    # "auto": Windows' own GPU counters (any vendor), plus temperature/
+    # clocks/power from NVIDIA's NVML on NVIDIA cards or from
+    # LibreHardwareMonitor on AMD/Intel. "nvml" or "windows" forces one
+    # source only; "lhm" forces LibreHardwareMonitor + Windows counters.
     "gpu_stats": "auto",
     # Blank = auto-detect (see _find_presentmon / XPERF_EXE below).
     "presentmon_exe": "",
@@ -115,7 +116,7 @@ NETWORK_ADAPTER_EXCLUDE_SUBSTRINGS = [
 WATCH_PROCESS_SUBSTRINGS = [s.lower() for s in SETTINGS["watch_processes"]]
 
 GPU_STATS = SETTINGS["gpu_stats"]
-if GPU_STATS not in ("auto", "nvml", "windows"):
+if GPU_STATS not in ("auto", "nvml", "windows", "lhm"):
     log.warning("unknown gpu_stats %r in settings.json - using 'auto'", GPU_STATS)
     GPU_STATS = "auto"
 
@@ -181,6 +182,16 @@ PRESENTMON_URL = (
     f"https://github.com/GameTechDev/PresentMon/releases/download/"
     f"v{PRESENTMON_VERSION}/PresentMon-{PRESENTMON_VERSION}-x64.exe"
 )
+# LibreHardwareMonitor's .NET Framework build - GPU temperature/power/clock
+# on AMD and Intel. Pinned version + checksum: setup downloads exactly this.
+LHM_VERSION = "0.9.6"
+LHM_URL = (
+    f"https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/download/"
+    f"v{LHM_VERSION}/LibreHardwareMonitor.zip"
+)
+LHM_SHA256 = "086d9f1b5a99e643edc2cfaaac16051685b551e4c5ac0b32a57c58c0e529c001"
+LHM_DIR = TOOLS_DIR / "lhm"
+
 PYTHON_EXE = Path(sys.executable)
 # Same interpreter without a console window - for the shortcut, the
 # start-at-login entry and the capture task.

@@ -7,7 +7,8 @@ Python environment and installed the packages:
 
 Steps (each skipped if already done):
   1. Download PresentMon (frame timing) into tools/, checking it's signed
-     by Intel.
+     by Intel, and LibreHardwareMonitor's library (GPU temperature/power
+     on AMD and Intel cards), checking its pinned checksum.
   2. Offer to install the Windows Performance Toolkit (xperf, for CPU
      interrupt analysis) - optional, via winget.
   3. Create the capture Scheduled Task - one UAC prompt. It runs with
@@ -76,6 +77,35 @@ def install_presentmon() -> bool:
         return False
     print(f"  PresentMon downloaded and verified (signed by Intel): {target}")
     config.PRESENTMON_EXE = target
+    return True
+
+
+def install_lhm() -> bool:
+    """LibreHardwareMonitor's library - GPU temperature/power/clock on AMD and
+    Intel cards. Pinned version, verified by checksum; only its DLLs are kept."""
+    if (config.LHM_DIR / "LibreHardwareMonitorLib.dll").exists():
+        print(f"  LibreHardwareMonitor already present: {config.LHM_DIR}")
+        return True
+    import hashlib
+    import io
+    import zipfile
+    print(f"  downloading LibreHardwareMonitor {config.LHM_VERSION} (GPU temperature/power on AMD and Intel)...")
+    try:
+        with urllib.request.urlopen(config.LHM_URL, timeout=120) as resp:
+            data = resp.read()
+    except OSError as e:
+        print(f"  ! download failed: {e} - GPU temperature/power won't be recorded on AMD/Intel cards")
+        return False
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != config.LHM_SHA256:
+        print(f"  ! download didn't match the expected checksum ({digest[:16]}...) - not installed")
+        return False
+    config.LHM_DIR.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for name in z.namelist():
+            if name.lower().endswith(".dll") and "/" not in name:  # the library + its dependencies
+                (config.LHM_DIR / name).write_bytes(z.read(name))
+    print(f"  LibreHardwareMonitor installed (checksum verified): {config.LHM_DIR}")
     return True
 
 
@@ -189,6 +219,8 @@ def install(assume_yes: bool) -> int:
     print(f"{config.APP_NAME} {__version__} setup\n")
     print("1. Frame-time capture tool (PresentMon)")
     install_presentmon()
+    print("\n   GPU sensors for AMD/Intel cards (LibreHardwareMonitor)")
+    install_lhm()
     print("\n2. CPU interrupt analysis (xperf) - optional")
     install_xperf(assume_yes)
     print("\n3. Automatic capture task")

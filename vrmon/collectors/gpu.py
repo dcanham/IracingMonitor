@@ -3,17 +3,20 @@ stream or recording encode running alongside the sim), VRAM, and - given
 the iRacing process's PID - how much of the load and VRAM is iRacing's
 own (vs. anything else running concurrently).
 
-Two sources, combined:
-- Windows' own GPU performance counters (gpu_windows.py) work on any
-  vendor's GPU.
-- On NVIDIA, NVML (nvidia-ml-py) additionally gives temperature, clocks,
-  power draw and throttle reasons. Its numbers are preferred where both
-  have one, for continuity with sessions recorded before the Windows
-  source existed; the Windows counters fill whatever NVML can't report
-  (notably per-process VRAM, which NVML doesn't provide under WDDM).
+Sources, combined in priority order - each fills in whatever the ones
+before it couldn't report:
+- On NVIDIA, NVML (nvidia-ml-py): temperature, clocks, power draw and
+  throttle reasons as well as load. Preferred where it has a value, for
+  continuity with sessions recorded before the other sources existed.
+- Otherwise (AMD, Intel), LibreHardwareMonitor (gpu_lhm.py): temperature,
+  power draw and core clock, if setup has installed it.
+- Windows' own GPU performance counters (gpu_windows.py), any vendor:
+  load, iRacing's share, encoder/decoder, VRAM - including per-process
+  VRAM, which NVML doesn't provide under WDDM.
 
-"gpu_stats" in data/settings.json picks "auto" (both where available),
-"nvml" or "windows" (one source only - handy for comparing them).
+"gpu_stats" in data/settings.json: "auto" (the above), "nvml" or
+"windows" (that source only), or "lhm" (LibreHardwareMonitor + Windows
+counters even on NVIDIA - to compare sources or test the AMD/Intel path).
 """
 
 import logging
@@ -22,6 +25,7 @@ import time
 import pynvml
 
 from vrmon import config
+from vrmon.collectors.gpu_lhm import LhmGpuCollector
 from vrmon.collectors.gpu_windows import WindowsGpuCollector
 
 log = logging.getLogger(__name__)
@@ -42,50 +46,62 @@ _LIMITING_REASONS = {
 
 
 class GpuCollector:
-    """Combines the NVML and Windows-counter sources per the gpu_stats
-    setting. Raises if neither is available."""
+    """Combines the available sources per the gpu_stats setting (see the
+    module docstring). Raises if none can be opened."""
 
     def __init__(self):
         choice = config.GPU_STATS
-        self._nvml = self._windows = None
+        nvml = lhm = windows = None
+
         if choice in ("auto", "nvml"):
             try:
-                self._nvml = NvmlGpuCollector()
+                nvml = NvmlGpuCollector()
             except Exception:
                 if choice == "nvml":
                     raise
-                log.info("NVML unavailable (not an NVIDIA GPU, or no driver) - using Windows GPU counters only")
-        if choice in ("auto", "windows"):
-            try:
-                self._windows = WindowsGpuCollector()
-            except Exception:
-                if self._nvml is None:
-                    raise
-                log.warning("Windows GPU counters unavailable - using NVML only", exc_info=True)
+                log.info("NVML unavailable (not an NVIDIA GPU, or no driver)")
 
-        primary = self._nvml or self._windows
-        self.name = primary.name
-        self.backend = "+".join(c.backend for c in (self._nvml, self._windows) if c)
+        if choice in ("auto", "windows", "lhm"):
+            try:
+                windows = WindowsGpuCollector()
+            except Exception:
+                if nvml is None and choice != "lhm":
+                    raise
+                log.warning("Windows GPU counters unavailable", exc_info=True)
+
+        # NVML already has temperature/power/clocks, so LibreHardwareMonitor
+        # is only needed without it (or when explicitly asked for).
+        if choice == "lhm" or (choice == "auto" and nvml is None):
+            try:
+                lhm = LhmGpuCollector(prefer_name=windows.name if windows else None)
+            except Exception as e:
+                if choice == "lhm":
+                    raise
+                log.info("GPU temperature/power unavailable without NVIDIA's NVML: %s", e)
+
+        self._sources = [s for s in (nvml, lhm, windows) if s is not None]
+        if not self._sources:
+            raise RuntimeError("no GPU stats source could be opened")
+        self.name = (nvml or windows or lhm).name
+        self.backend = "+".join(s.backend for s in self._sources)
 
     def sample(self, target_pid: int | None = None) -> dict:
-        if self._nvml is None:
-            return self._windows.sample(target_pid)
-        result = self._nvml.sample(target_pid)
-        if self._windows is not None:
+        result = {}
+        for source in self._sources:
             try:
-                extra = self._windows.sample(target_pid)
+                values = source.sample(target_pid)
             except Exception:
-                log.debug("Windows GPU counter sample failed", exc_info=True)
-            else:
-                for key, value in extra.items():
-                    if result.get(key) is None:
-                        result[key] = value
+                log.debug("%s GPU sample failed", source.backend, exc_info=True)
+                continue
+            for key, value in values.items():
+                if result.get(key) is None:
+                    result[key] = value
+        result.setdefault("throttle_reasons", [])
         return result
 
     def shutdown(self) -> None:
-        for c in (self._nvml, self._windows):
-            if c is not None:
-                c.shutdown()
+        for source in self._sources:
+            source.shutdown()
 
 
 class NvmlGpuCollector:

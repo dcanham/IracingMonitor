@@ -37,7 +37,7 @@ def check_python() -> None:
     else:
         check(OK, "Python version", detail)
     missing = []
-    for module in ("psutil", "pynvml", "irsdk", "fastapi", "uvicorn", "matplotlib"):
+    for module in ("psutil", "pynvml", "irsdk", "fastapi", "uvicorn", "matplotlib", "pythonnet"):
         try:
             importlib.import_module(module)
         except ImportError:
@@ -86,9 +86,12 @@ def check_hardware() -> None:
         gpu.shutdown()
         if "nvml" in backend:
             check(OK, "GPU stats", f"{name} via {backend}")
+        elif "lhm" in backend:
+            check(OK, "GPU stats", f"{name} via {backend} - load, VRAM, temperature, power, clock "
+                  "(throttle reasons are NVIDIA-only)")
         else:
             check(WARN, "GPU stats", f"{name} via {backend} - load and VRAM only",
-                  "temperature, clocks, power and throttling are only available on NVIDIA GPUs so far")
+                  "run setup.bat to add GPU temperature/power/clock (LibreHardwareMonitor)")
     except Exception as e:
         check(FAIL, "GPU stats", f"couldn't open any GPU stats source ({e})")
 
