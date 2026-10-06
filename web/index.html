@@ -73,6 +73,17 @@
         <canvas id="chart-fps"></canvas>
     </div>
 
+    <div class="panel">
+        <h2><span class="dot unknown" id="dot-tp"></span>Trading Paints <span id="tp-name" class="muted-inline"></span></h2>
+        <div class="stat-row"><span class="label">App</span><span class="value" id="tp-app">-</span></div>
+        <div class="stat-row"><span class="label">CPU / memory</span><span class="value" id="tp-usage">-</span></div>
+        <div class="stat-row"><span class="label">Last download</span><span class="value" id="tp-download">-</span></div>
+        <div class="stat-row"><span class="label">Last cleanup</span><span class="value" id="tp-cleanup">-</span></div>
+        <div class="stat-row"><span class="label">Paint folder</span><span class="value" id="tp-folder">-</span></div>
+        <div class="sub-head">Errors <span class="muted-inline">from its log - click for the full message</span></div>
+        <div id="tp-problems"><div class="empty">none</div></div>
+    </div>
+
     <div class="panel" style="grid-column: 1 / -1;">
         <h2>Reports <span class="muted-inline">newest session first - click to open in a new tab</span></h2>
         <div id="report-list"><div class="empty">loading...</div></div>

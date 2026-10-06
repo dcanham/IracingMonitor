@@ -309,7 +309,75 @@ function connect() {
         pushPoint(charts.fps, label, [ir?.frame_rate ?? null]);
 
         setText("proc-cpu", p ? fmtProcCpu(p.cpu_pct, snap.cpu_count) : "not running");
+
+        renderTradingPaints(snap.trading_paints, snap.cpu_count);
     };
+}
+
+// --- Trading Paints panel ---------------------------------------------------
+
+function fmtBytes(b) {
+    if (b == null) return "-";
+    if (b >= 1e9) return (b / 1e9).toFixed(1) + " GB";
+    if (b >= 1e6) return (b / 1e6).toFixed(0) + " MB";
+    return (b / 1e3).toFixed(0) + " KB";
+}
+
+function fmtWhen(ts) {
+    const sec = Date.now() / 1000 - ts;
+    if (sec < 90) return "just now";
+    if (sec < 3600) return `${(sec / 60).toFixed(0)}m ago`;
+    if (sec < 86400) return `${(sec / 3600).toFixed(0)}h ago`;
+    return fmtEventTime(ts);
+}
+
+function fmtBurst(b, verb) {
+    if (!b) return "none yet";
+    return `${b.count} file${b.count === 1 ? "" : "s"}, ${fmtBytes(b.bytes)}${verb} - ${fmtWhen(b.ts)}`;
+}
+
+let tpProblemsKey = null;
+
+function renderTradingPaints(tp, cpuCount) {
+    const dot = document.getElementById("dot-tp");
+    if (!tp) return;
+    const st = tp.status || {};
+    dot.className = tp.running ? "dot ok pulse" : "dot unknown";
+    setText("tp-name", st.process_name && st.process_name !== "Trading Paints" ? st.process_name.replace(/^Trading Paints\s*/, "") : "");
+    setText("tp-app", tp.running ? `running (PID ${tp.pid})` : "not running");
+    setText("tp-usage", tp.running ? `${fmtProcCpu(tp.cpu_pct, cpuCount)} / ${fmtMB(tp.rss_mb)}` : "-");
+    setText("tp-download", fmtBurst(st.last_download, ""));
+    setText("tp-cleanup", fmtBurst(st.last_cleanup, " freed"));
+    setText("tp-folder", st.paint_folder ? `${st.paint_folder.count} files, ${fmtBytes(st.paint_folder.bytes)}` : "-");
+
+    // Only rebuild the list when it actually changed - this runs 4x a second.
+    const problems = st.problems || [];
+    const key = problems.map(e => e.ts + e.kind).join("|");
+    if (key === tpProblemsKey) return;
+    tpProblemsKey = key;
+    const list = document.getElementById("tp-problems");
+    if (!problems.length) {
+        list.innerHTML = '<div class="empty">none</div>';
+        return;
+    }
+    list.replaceChildren(...problems.map(e => {
+        const row = document.createElement("div");
+        row.className = "event";
+        row.title = "Click for the full message";
+        const time = document.createElement("span");
+        time.className = "ts";
+        time.textContent = fmtEventTime(e.ts);
+        const label = document.createElement("span");
+        label.className = "label";
+        label.textContent = e.detail;
+        row.append(time, label);
+        row.addEventListener("click", () => showText(
+            e.kind === "log_error" ? "Trading Paints log error" : "Trading Paints " + e.kind,
+            fmtEventTime(e.ts) + (e.kind === "log_error"
+                ? " - when vrmon saw it in Trading Paints' log (its lines carry no times of their own)" : ""),
+            [e.detail]));
+        return row;
+    }));
 }
 
 connect();
@@ -430,6 +498,21 @@ let currentRef = null;
 function closeEvent() {
     modal.hidden = true;
     currentRef = null;
+}
+
+// The same window for text the page already has - nothing to fetch or open.
+function showText(titleText, metaText, lines) {
+    currentRef = null;
+    document.getElementById("modal-title").textContent = titleText;
+    document.getElementById("modal-meta").textContent = metaText;
+    document.getElementById("modal-body").replaceChildren(...lines.map(text => {
+        const line = document.createElement("div");
+        line.textContent = text || " ";
+        return line;
+    }));
+    document.getElementById("modal-note").textContent = "";
+    document.getElementById("modal-open").hidden = true;
+    modal.hidden = false;
 }
 
 async function showEvent(ev) {

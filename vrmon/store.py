@@ -80,6 +80,39 @@ CREATE TABLE IF NOT EXISTS iracing_roster_events (
 );
 CREATE INDEX IF NOT EXISTS idx_roster_ts ON iracing_roster_events(ts);
 
+-- iRacing's full session info YAML (zlib-compressed), each time it changed.
+CREATE TABLE IF NOT EXISTS iracing_session_info (
+    ts REAL NOT NULL,
+    update_no INTEGER,
+    yaml_zlib BLOB
+);
+CREATE INDEX IF NOT EXISTS idx_session_info_ts ON iracing_session_info(ts);
+
+-- Trading Paints (see collectors/trading_paints.py).
+CREATE TABLE IF NOT EXISTS tp_samples (
+    ts REAL NOT NULL,
+    running INTEGER,
+    pid INTEGER,
+    cpu_pct REAL,
+    rss_mb REAL,
+    read_bps REAL,
+    write_bps REAL,
+    threads INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_tp_samples_ts ON tp_samples(ts);
+CREATE TABLE IF NOT EXISTS tp_events (
+    ts REAL NOT NULL,
+    kind TEXT,
+    detail TEXT,
+    size INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_tp_events_ts ON tp_events(ts);
+CREATE TABLE IF NOT EXISTS tp_log_snapshots (
+    ts REAL NOT NULL,
+    text TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tp_log_ts ON tp_log_snapshots(ts);
+
 CREATE TABLE IF NOT EXISTS windows_events (
     ts REAL NOT NULL,
     provider TEXT,
@@ -182,6 +215,58 @@ _COLUMN_MIGRATIONS = {
     },
     "iracing_samples": {
         "lap_dist_pct": "REAL",
+        # Stutter diagnostics - see collectors/iracing.py for what each means.
+        "session_tick": "INTEGER",
+        "chan_quality": "REAL",
+        "chan_partner_quality": "REAL",
+        "chan_latency": "REAL",
+        "chan_avg_latency": "REAL",
+        "chan_clock_skew": "REAL",
+        "cpu_usage_fg": "REAL",
+        "cpu_usage_bg": "REAL",
+        "ir_gpu_usage": "REAL",
+        "mem_page_fault_sec": "REAL",
+        "mem_soft_page_fault_sec": "REAL",
+        # Everything else iRacing publishes that could bear on performance
+        # (see collectors/iracing.py's _RECORDED_VARS for the source vars).
+        "session_num": "INTEGER",
+        "session_state": "INTEGER",
+        "session_flags": "INTEGER",
+        "session_unique_id": "INTEGER",
+        "on_track_car": "INTEGER",
+        "in_garage": "INTEGER",
+        "garage_visible": "INTEGER",
+        "replay_playing": "INTEGER",
+        "replay_frame_num": "INTEGER",
+        "replay_frame_num_end": "INTEGER",
+        "cam_car_idx": "INTEGER",
+        "cam_camera_number": "INTEGER",
+        "cam_group_number": "INTEGER",
+        "cam_camera_state": "INTEGER",
+        "player_track_surface": "INTEGER",
+        "on_pit_road": "INTEGER",
+        "in_pit_stall": "INTEGER",
+        "tow_time": "REAL",
+        "pitstop_active": "INTEGER",
+        "load_num_textures": "INTEGER",
+        "ok_to_reload_textures": "INTEGER",
+        "disk_logging_enabled": "INTEGER",
+        "disk_logging_active": "INTEGER",
+        "vid_cap_enabled": "INTEGER",
+        "vid_cap_active": "INTEGER",
+        "radio_transmit_car_idx": "INTEGER",
+        "radio_transmit_radio_idx": "INTEGER",
+        "car_dist_ahead": "REAL",
+        "car_dist_behind": "REAL",
+        "time_of_day": "REAL",
+        "solar_altitude": "REAL",
+        "skies": "INTEGER",
+        "precipitation": "REAL",
+        "track_wetness": "INTEGER",
+        "fog_level": "REAL",
+        "declared_wet": "INTEGER",
+        "cars_in_world": "INTEGER",
+        "cars_near": "INTEGER",
     },
     "windows_events": {
         # One per real event: "<log>|<record id>", or "WER|<report id>" for
@@ -546,23 +631,58 @@ def insert_top_process_samples(ts: float, rows: list[dict]) -> None:
         )
 
 
+# Every column added since the original table - the collector fills in
+# whichever of these it has; the rest are stored as NULL.
+_IRACING_EXTRA_COLUMNS = tuple(c for c in _COLUMN_MIGRATIONS["iracing_samples"] if c != "lap_dist_pct")
+
+
 def insert_iracing_sample(ts: float, **kw) -> None:
+    columns = ("ts", "connected", "frame_rate", "session_time", "speed", "lap", "lap_dist_pct", "on_track",
+               *_IRACING_EXTRA_COLUMNS)
+    values = (
+        ts,
+        int(kw.get("connected", False)),
+        kw.get("frame_rate"),
+        kw.get("session_time"),
+        kw.get("speed"),
+        kw.get("lap"),
+        kw.get("lap_dist_pct"),
+        int(kw.get("on_track", False)) if kw.get("on_track") is not None else None,
+        *(kw.get(c) for c in _IRACING_EXTRA_COLUMNS),
+    )
     with _write() as conn:
         conn.execute(
-            """INSERT INTO iracing_samples
-               (ts, connected, frame_rate, session_time, speed, lap, lap_dist_pct, on_track)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (
-                ts,
-                int(kw.get("connected", False)),
-                kw.get("frame_rate"),
-                kw.get("session_time"),
-                kw.get("speed"),
-                kw.get("lap"),
-                kw.get("lap_dist_pct"),
-                int(kw.get("on_track", False)) if kw.get("on_track") is not None else None,
-            ),
+            f"INSERT INTO iracing_samples ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+            values,
         )
+
+
+def insert_session_info(ts: float, update_no: int, yaml_zlib: bytes) -> None:
+    with _write() as conn:
+        conn.execute("INSERT INTO iracing_session_info (ts, update_no, yaml_zlib) VALUES (?,?,?)",
+                     (ts, update_no, yaml_zlib))
+
+
+def insert_tp_sample(ts: float, **kw) -> None:
+    with _write() as conn:
+        conn.execute(
+            "INSERT INTO tp_samples (ts, running, pid, cpu_pct, rss_mb, read_bps, write_bps, threads) VALUES (?,?,?,?,?,?,?,?)",
+            (ts, int(bool(kw.get("running"))), kw.get("pid"), kw.get("cpu_pct"), kw.get("rss_mb"),
+             kw.get("read_bps"), kw.get("write_bps"), kw.get("threads")),
+        )
+
+
+def insert_tp_events(ts: float, rows: list[dict]) -> None:
+    if not rows:
+        return
+    with _write() as conn:
+        conn.executemany("INSERT INTO tp_events (ts, kind, detail, size) VALUES (?,?,?,?)",
+                         [(ts, r.get("kind"), r.get("detail"), r.get("size")) for r in rows])
+
+
+def insert_tp_log_snapshot(ts: float, text: str) -> None:
+    with _write() as conn:
+        conn.execute("INSERT INTO tp_log_snapshots (ts, text) VALUES (?,?)", (ts, text))
 
 
 def insert_roster_events(rows: list[dict]) -> None:
@@ -611,6 +731,10 @@ _QUERYABLE_TABLES = {
     "top_process_samples",
     "iracing_samples",
     "iracing_roster_events",
+    "iracing_session_info",
+    "tp_samples",
+    "tp_events",
+    "tp_log_snapshots",
     "windows_events",
 }
 

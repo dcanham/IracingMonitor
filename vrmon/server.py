@@ -17,6 +17,18 @@ log = logging.getLogger(__name__)
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=str(config.WEB_DIR)), name="static")
 
+
+@app.middleware("http")
+async def revalidate_dashboard(request: Request, call_next):
+    """Without caching headers, browsers guess how long to reuse the
+    dashboard's files and can keep running an old app.js after an update.
+    no-cache makes them check each load (a cheap 304 when unchanged)."""
+    response = await call_next(request)
+    path = request.url.path
+    if path in ("/", "/settings") or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 _PUSH_INTERVAL = 0.25
 
 
@@ -113,5 +125,6 @@ async def ws_live(websocket: WebSocket):
         while True:
             await websocket.send_json(hub.snapshot())
             await asyncio.sleep(_PUSH_INTERVAL)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
+        # RuntimeError: the browser closed the tab between two pushes.
         pass

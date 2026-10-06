@@ -13,8 +13,10 @@ while actually originating below the game entirely:
   screen, with the bugcheck code.
 - Errors from the GPU driver itself (NVIDIA nvlddmkm, AMD, Intel).
 - Application Error 1000 / Application Hang 1002 for the iRacing sim:
-  the sim itself crashed or stopped responding.
-- Windows Error Reporting 1001 (Application log) mentioning iRacing or a
+  the sim itself crashed or stopped responding. Same for Trading Paints,
+  plus its .NET Runtime 1026 (unhandled exception) records.
+- Windows Error Reporting 1001 (Application log) mentioning iRacing,
+  Trading Paints or a
   LiveKernelEvent (e.g. 141, a GPU watchdog-forced hang recovery).
   Filtered to those, not every WER report system-wide, otherwise any
   unrelated background app's crash would flood this; and excluding
@@ -65,11 +67,14 @@ Get-WinEvent -FilterHashtable @{{LogName='System'; StartTime=$start}} -ErrorActi
   }} | ForEach-Object {{ Emit $_ }}
 
 Get-WinEvent -FilterHashtable @{{LogName='Application'; StartTime=$start; ProviderName=@('Application Error','Application Hang')}} -ErrorAction SilentlyContinue |
-  Where-Object {{ $_.Message -like '*iRacingSim64DX11*' }} | ForEach-Object {{ Emit $_ }}
+  Where-Object {{ $_.Message -like '*iRacingSim64DX11*' -or $_.Message -like '*Trading Paints*' }} | ForEach-Object {{ Emit $_ }}
+
+Get-WinEvent -FilterHashtable @{{LogName='Application'; StartTime=$start; ProviderName='.NET Runtime'; Id=1026}} -ErrorAction SilentlyContinue |
+  Where-Object {{ $_.Message -like '*Trading Paints*' }} | ForEach-Object {{ Emit $_ }}
 
 Get-WinEvent -FilterHashtable @{{LogName='Application'; StartTime=$start; ProviderName='Windows Error Reporting'; Id=1001}} -ErrorAction SilentlyContinue |
   Where-Object {{
-    ($_.Message -like '*iRacingSim64DX11*' -or $_.Message -like '*LiveKernelEvent*') -and
+    ($_.Message -like '*iRacingSim64DX11*' -or $_.Message -like '*Trading Paints*' -or $_.Message -like '*LiveKernelEvent*') -and
     $_.Message -notlike '*RADAR_PRE_LEAK*' -and $_.Message -notlike '*BlueScreen*'
   }} | ForEach-Object {{ Emit $_ }}
 """

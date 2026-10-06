@@ -131,6 +131,8 @@ IRACING_POLL_INTERVAL = 0.05  # ~20Hz, irsdk itself ticks at sim rate
 # per-call. Correlating "something else spiked" against a frame-time
 # hitch only needs multi-second resolution anyway.
 TOP_PROCESS_POLL_INTERVAL = 2.0
+# Trading Paints process stats; its paint-folder scan runs every 2s.
+TRADING_PAINTS_POLL_INTERVAL = 1.0
 
 # Slower still - each check spawns a PowerShell process to query the
 # Windows System event log (Get-WinEvent). TDR/WHEA events are rare by
@@ -147,6 +149,14 @@ GPU_BUSY_PCT = 90.0
 # Averaged over a 1s window - a saturated thread hops between cores, so
 # its core rarely reads a full 100% for the whole second.
 CPU_CORE_SATURATED_PCT = 90.0
+# iRacing's own diagnostics (see collectors/iracing.py). On a healthy
+# connection quality sits at ~0.998-1.0 and latency within a tick (~17ms)
+# of its average.
+IRACING_CHAN_QUALITY_MIN = 0.95
+IRACING_LATENCY_SPIKE_S = 0.1
+IRACING_SIM_PAUSE_S = 0.1
+IRACING_HARD_PAGE_FAULTS = 50
+IRACING_FG_THREAD_BUSY = 0.9
 FRAMERATE_DROP_PCT = 0.85  # flag a window if FPS falls below 85% of session median
 
 # --- server ---------------------------------------------------------------

@@ -284,3 +284,25 @@ canvas {
     padding: 6px 12px; font-weight: 600; cursor: pointer;
 }
 .modal-button:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+/* Trading Paints panel */
+.sub-head {
+    margin: 10px 0 4px;
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+#tp-problems { max-height: 150px; overflow-y: auto; font-size: 0.78rem; }
+#tp-problems .event {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0 3px 6px;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid var(--warn);
+    cursor: pointer;
+}
+#tp-problems .event:hover { background: rgba(77, 163, 255, 0.08); }
+#tp-problems .event .ts { color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+#tp-problems .event .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tp-problems .empty { color: var(--muted); padding: 4px 0; }

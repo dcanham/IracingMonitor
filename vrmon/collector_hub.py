@@ -23,6 +23,7 @@ from vrmon.collectors.iracing import IRacingCollector
 from vrmon.collectors.process import ProcessCollector
 from vrmon.collectors.system import SystemCollector
 from vrmon.collectors.top_processes import TopProcessCollector
+from vrmon.collectors.trading_paints import TradingPaintsCollector
 from vrmon.collectors.windows_events import WindowsEventCollector
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class CollectorHub:
             "process": None,
             "top_processes": [],
             "iracing": None,
+            "trading_paints": None,
             "recording": False,
             "session_id": None,
             "server_started_ts": time.time(),
@@ -95,6 +97,7 @@ class CollectorHub:
             ("process", self._process_loop),
             ("top_processes", self._top_process_loop),
             ("iracing", self._iracing_loop),
+            ("trading_paints", self._trading_paints_loop),
             ("windows_events", self._windows_events_loop),
         ]
         for name, target in loops:
@@ -134,6 +137,7 @@ class CollectorHub:
             "process": 5.0,
             "top_processes": 15.0,
             "iracing": 5.0,
+            "trading_paints": 30.0,  # the paint-folder walk can be slow on a cold disk
             "windows_events": 90.0,  # first poll looks back over days of logs
         }
         warned: set[str] = set()
@@ -321,6 +325,9 @@ class CollectorHub:
             roster_events = sample.pop("roster_events", None) or []
             if self.is_recording():
                 store.insert_iracing_sample(ts, **sample)
+                info = collector.session_info()
+                if info:
+                    store.insert_session_info(ts, *info)
                 if roster_events:
                     for e in roster_events:
                         e["ts"] = ts
@@ -329,6 +336,34 @@ class CollectorHub:
                         log.info("roster: %s car_idx=%s name=%s (%s drivers)", e["type"], e["car_idx"], e.get("name"), e.get("num_drivers"))
             self._set("iracing", {"ts": ts, **sample})
             self._stop.wait(config.IRACING_POLL_INTERVAL)
+
+    def _trading_paints_loop(self) -> None:
+        collector = TradingPaintsCollector()
+        try:
+            now = time.time()
+            collector.seed(store.query_range("tp_events", now - 7 * 86400, now))
+        except Exception:
+            log.debug("couldn't load recent Trading Paints history", exc_info=True)
+        while not self._stop.is_set():
+            self._heartbeat("trading_paints")
+            ts = time.time()
+            try:
+                sample = collector.sample()
+            except Exception:
+                log.debug("Trading Paints sample failed", exc_info=True)
+                sample = {"running": False, "events": []}
+            events = sample.pop("events", [])
+            log_text = sample.pop("log_text", None)
+            if self.is_recording():
+                store.insert_tp_sample(ts, **sample)
+                store.insert_tp_events(ts, events)
+                if log_text is not None:
+                    store.insert_tp_log_snapshot(ts, log_text)
+                for e in events:
+                    if e["kind"] in ("stopped", "restarted", "log_error"):
+                        log.info("Trading Paints: %s - %s", e["kind"], e["detail"])
+            self._set("trading_paints", sample)
+            self._stop.wait(config.TRADING_PAINTS_POLL_INTERVAL)
 
     def _windows_events_loop(self) -> None:
         collector = WindowsEventCollector(since=self._events_since)

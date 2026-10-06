@@ -9,6 +9,7 @@ Usage:
 
 import html
 import json
+import os
 import statistics
 import sys
 import time
@@ -48,6 +49,12 @@ TAG_LABELS = {
     "gpu-power-thermal-limited": "GPU power/thermal limited",
     "gpu-load-not-from-iracing": "GPU load not from iRacing",
     "possible-core-scheduling-stall": "Possible P/E-core scheduling stall",
+    "connection-degraded": "Connection to iRacing degraded",
+    "latency-spike": "Latency spike to iRacing",
+    "sim-paused": "Simulation paused",
+    "hard-page-faults": "iRacing waiting on disk (page faults)",
+    "render-thread-busy": "iRacing render thread busy",
+    "trading-paints-download": "Trading Paints download",
     "unexplained-fps-dip": "Unexplained FPS dip",
 }
 
@@ -112,8 +119,9 @@ def analyze_session(session_id: int | None) -> dict:
     system_rows = store.query_range("system_samples", start_ts, end_ts)
     gpu_rows = store.query_range("gpu_samples", start_ts, end_ts)
     iracing_rows = store.query_range("iracing_samples", start_ts, end_ts)
+    tp_events = store.query_range("tp_events", start_ts, end_ts)
 
-    buckets = build_buckets(start_ts, end_ts, system_rows, gpu_rows, iracing_rows)
+    buckets = build_buckets(start_ts, end_ts, system_rows, gpu_rows, iracing_rows, tp_events)
     median_fps = tag_buckets(buckets)
     anomaly_buckets = [b for b in buckets if b.tags]
 
@@ -184,8 +192,29 @@ def analyze_session(session_id: int | None) -> dict:
         "anomaly_buckets": anomaly_buckets,
         "windows_events": windows_events,
         "flat_settings": flat_settings,
+        "trading_paints": _trading_paints_summary(start_ts, end_ts, tp_events, anomaly_buckets),
         "presentmon": store.get_presentmon_summary(sid),
         "dpcisr": store.get_dpcisr_summary(sid),
+    }
+
+
+def _trading_paints_summary(start_ts, end_ts, tp_events, anomaly_buckets) -> dict | None:
+    samples = store.query_range("tp_samples", start_ts, end_ts)
+    if not samples and not tp_events:
+        return None  # recorded before Trading Paints was tracked
+    paints = [r for r in tp_events if r["kind"] in ("paint_added", "paint_updated")]
+    writes = [r["write_bps"] for r in samples if r["write_bps"] is not None]
+    return {
+        "running_pct": 100 * sum(1 for r in samples if r["running"]) / len(samples) if samples else None,
+        "paint_count": len(paints),
+        "paint_mb": sum(r["size"] or 0 for r in paints) / 1e6,
+        "paints_during_dips": sum(1 for b in anomaly_buckets if any(n == "trading-paints-download" for n, _ in b.tags)),
+        "peak_cpu_pct": max((r["cpu_pct"] for r in samples if r["cpu_pct"] is not None), default=None),
+        "peak_rss_mb": max((r["rss_mb"] for r in samples if r["rss_mb"] is not None), default=None),
+        "peak_write_mbps": max(writes) / 1e6 if writes else None,
+        "problems": [{"ts": r["ts"], "kind": r["kind"], "detail": r["detail"]}
+                     for r in tp_events if r["kind"] in ("stopped", "restarted", "log_error")],
+        "paint_times": [(r["ts"] - start_ts, r["detail"], r["size"]) for r in paints],
     }
 
 
@@ -257,6 +286,41 @@ def _render_windows_events(events) -> str:
             f"<span class='tag-detail'>{html.escape(e['level'] or '')} - {html.escape(e['message'][:240])}</span></div></div></div>"
         )
     return "\n".join(rows)
+
+
+def _render_trading_paints(tp) -> str:
+    if tp is None:
+        return "<p class='muted'>Trading Paints wasn't tracked in this session (recorded before this was added).</p>"
+    if not tp["running_pct"] and not tp["paint_count"]:
+        return "<p class='muted'>Trading Paints wasn't running during this session.</p>"
+    # Trading Paints' CPU is stored as % of one core, like the sim's.
+    cpu = tp["peak_cpu_pct"] / (os.cpu_count() or 1) if tp["peak_cpu_pct"] is not None else None
+    out = [f"""
+    <div class="overview">
+        <div class="stat"><div class="num">{_fmt(tp['running_pct'], '%')}</div><div class="label">Of session running</div></div>
+        <div class="stat"><div class="num">{tp['paint_count']}</div><div class="label">Paint files written ({tp['paint_mb']:.1f} MB)</div></div>
+        <div class="stat"><div class="num">{tp['paints_during_dips']}</div><div class="label">Flagged windows with a paint download</div></div>
+        <div class="stat"><div class="num">{_fmt(cpu, '%', 1)}</div><div class="label">Peak CPU (of whole CPU)</div></div>
+        <div class="stat"><div class="num">{_fmt(tp['peak_rss_mb'], ' MB')}</div><div class="label">Peak memory</div></div>
+        <div class="stat"><div class="num">{_fmt(tp['peak_write_mbps'], ' MB/s', 1)}</div><div class="label">Peak disk write</div></div>
+    </div>"""]
+    if tp["problems"]:
+        for e in tp["problems"]:
+            when = time.strftime("%H:%M:%S", time.localtime(e["ts"]))
+            out.append(f"<div class='window'><div class='window-time' style='width:150px;'>{when}</div>"
+                       f"<div class='window-tags'><div class='tag'><span class='tag-name'>{html.escape(e['kind'].replace('_', ' '))}</span>"
+                       f"<span class='tag-detail'>{html.escape(e['detail'] or '')}</span></div></div></div>")
+    else:
+        out.append("<p class='muted'>No stops, restarts or errors from Trading Paints this session.</p>")
+    if tp["paint_times"]:
+        rows = "".join(
+            f"<div class='window'><div class='window-time'>+{int(t // 60):02d}:{int(t % 60):02d}</div>"
+            f"<div class='window-tags'><div class='tag'><span class='tag-detail'>{html.escape(name)}"
+            f"{f' ({size / 1e6:.1f} MB)' if size else ''}</span></div></div></div>"
+            for t, name, size in tp["paint_times"][:200])
+        more = f"<p class='muted'>...and {len(tp['paint_times']) - 200} more.</p>" if len(tp["paint_times"]) > 200 else ""
+        out.append(f"<details><summary class='muted'>Paint files written ({len(tp['paint_times'])})</summary>{rows}{more}</details>")
+    return "\n".join(out)
 
 
 def _render_settings_diff_list(changes, compared_label) -> str:
@@ -435,6 +499,11 @@ def _render_single_html(data, settings_changes, prev_sid) -> str:
 <div class="chart-wrap">
 <h2>Flagged windows ({s['anomaly_count']})</h2>
 {_render_findings(data['anomaly_buckets'])}
+</div>
+
+<div class="chart-wrap">
+<h2>Trading Paints - paint downloads and app health</h2>
+{_render_trading_paints(data['trading_paints'])}
 </div>
 
 <div class="chart-wrap">

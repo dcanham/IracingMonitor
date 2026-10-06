@@ -52,10 +52,13 @@ def describe_event(e) -> str:
         return "Unexpected shutdown"
     if provider == "Microsoft-Windows-WHEA-Logger":
         return "Hardware error (WHEA)"
+    app = "Trading Paints" if "trading paints" in msg.lower() else "iRacing"
     if provider == "Application Error":
-        return "iRacing crashed"
+        return f"{app} crashed"
     if provider == "Application Hang":
-        return "iRacing stopped responding"
+        return f"{app} stopped responding"
+    if provider == ".NET Runtime":
+        return f"{app} crashed (unhandled .NET error)"
     if provider == "Windows Error Reporting":
         name = re.search(r"Event Name: (\S+)", msg)
         name = name.group(1) if name else "unknown"
@@ -157,6 +160,28 @@ def _sim_crash_reports(since: float) -> list[dict]:
     return out
 
 
+def _trading_paints(since: float) -> list[dict]:
+    """Trading Paints closing/restarting mid-session or logging an error, and
+    its paint downloads grouped per minute (a race start can bring dozens)."""
+    out, downloads = [], {}
+    for r in store.query_range("tp_events", since, time.time() + 60):
+        if r["kind"] in ("paint_added", "paint_updated"):
+            minute = int(r["ts"] // 60)
+            d = downloads.setdefault(minute, {"ts": r["ts"], "n": 0, "bytes": 0, "files": []})
+            d["n"] += 1
+            d["bytes"] += r["size"] or 0
+            d["files"].append(r["detail"])
+        elif r["kind"] in ("stopped", "restarted", "log_error"):
+            out.append({"ts": r["ts"], "source": "Trading Paints", "level": "warning",
+                        "label": r["detail"][:160] if r["kind"] != "log_error" else f"Trading Paints log: {r['detail'][:140]}",
+                        "detail": r["detail"]})
+    for d in downloads.values():
+        out.append({"ts": d["ts"], "source": "Trading Paints", "level": "info",
+                    "label": f"Trading Paints wrote {d['n']} paint file{'s' if d['n'] != 1 else ''} ({d['bytes'] / 1e6:.1f} MB)",
+                    "detail": ", ".join(d["files"])[:300]})
+    return out
+
+
 def _sessions(since: float) -> list[dict]:
     out = []
     for s in store.list_sessions():
@@ -255,7 +280,7 @@ def open_event_source(kind: str, key: str = "", file: str = "") -> None:
 def recent_events(hours: float = 48, limit: int = 200) -> list[dict]:
     since = time.time() - hours * 3600
     events = []
-    for source in (_windows, _launcher, _anticheat, _sim_crash_reports, _sessions):
+    for source in (_windows, _launcher, _anticheat, _sim_crash_reports, _trading_paints, _sessions):
         try:
             events.extend(source(since))
         except Exception:

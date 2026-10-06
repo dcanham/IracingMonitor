@@ -143,8 +143,10 @@ Common problems:
 |---|---|---|
 | System | CPU total, busiest single core, P-/E-core groups on hybrid Intel CPUs, RAM, page file, disk, network | 4x per second |
 | GPU | Load, iRacing's share, encoder/decoder, VRAM (total and iRacing's), temp/power/throttling on NVIDIA | 4x per second |
-| iRacing | Frame rate, on-track state, lap and track position, track/car, drivers joining and leaving | 20x per second |
+| iRacing | Frame rate; iRacing's own CPU/GPU thread load, page faults and sim tick; connection quality and latency; session state, garage/replay/camera, texture loading, disk telemetry and video capture, voice chat; cars in the world and near you; time of day and weather; lap and track position; drivers joining and leaving | 20x per second |
+| iRacing session info | Track, weather settings, every driver and car, cameras, results - the full snapshot, each time it changes | on change (at most every 10 seconds) |
 | Processes | The busiest programs on the PC | every 2 seconds |
+| Trading Paints | Whether it's running (and if it closes or restarts mid-session), its CPU, memory and disk use, every paint file it writes, its log, and its crashes - reports flag frame-rate dips right after a paint download | every second |
 | Windows logs | Crashes, blue screens, GPU driver resets, hardware errors, unexpected shutdowns - including from a hard crash, picked up when the app next starts | every 10 seconds |
 | iRacing logs | Launcher and anti-cheat errors, sim crash reports (shown in the dashboard's Recent events) | on demand |
 | PresentMon | Every single frame's timing | per frame |
@@ -189,3 +191,29 @@ web/               dashboard (Chart.js vendored, no internet needed)
 data/              your recordings and settings (not in git)
 tools/             PresentMon + LibreHardwareMonitor, downloaded by setup (not in git)
 ```
+
+## Credits
+
+iRacing Monitor is built on these projects - thank you to their authors.
+Only Chart.js ships inside this app (with its license notice intact);
+everything else is downloaded during setup from its official source and
+stays under its own license.
+
+| Project | Used for | License |
+|---|---|---|
+| [PresentMon](https://github.com/GameTechDev/PresentMon) (Intel) | Per-frame timing capture | MIT |
+| [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | GPU temperature, power and clock on AMD/Intel | MPL-2.0 |
+| [Windows Performance Toolkit](https://learn.microsoft.com/windows-hardware/test/wpt/) (Microsoft, xperf) | CPU interrupt (DPC/ISR) capture - optional | Microsoft Windows ADK license |
+| [pyirsdk](https://github.com/kutu/pyirsdk) | Reading iRacing's telemetry | MIT |
+| [psutil](https://github.com/giampaolo/psutil) | CPU, memory, disk, network and process stats | BSD-3-Clause |
+| [nvidia-ml-py](https://pypi.org/project/nvidia-ml-py/) (NVIDIA) | NVIDIA GPU stats | BSD-3-Clause |
+| [pythonnet](https://github.com/pythonnet/pythonnet) | Loading LibreHardwareMonitor from Python | MIT |
+| [FastAPI](https://github.com/fastapi/fastapi) and [Uvicorn](https://github.com/encode/uvicorn) | The live dashboard's web server | MIT / BSD-3-Clause |
+| [Matplotlib](https://matplotlib.org/) | Report charts | Matplotlib license (PSF-based) |
+| [Chart.js](https://www.chartjs.org/) | Dashboard charts (vendored in `web/`) | MIT |
+| [Python](https://www.python.org/) | Everything else | PSF |
+
+iRacing Monitor is an independent project and is not affiliated with or
+endorsed by iRacing.com Motorsport Simulations, NVIDIA, AMD, Intel or
+Microsoft. iRacing is a trademark of iRacing.com Motorsport Simulations,
+LLC.
